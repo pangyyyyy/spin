@@ -79,6 +79,39 @@ def crop(img, center, scale, res, rot=0):
     new_img = scipy.misc.imresize(new_img, res)
     return new_img
 
+def crop_cliff(img, center, scale, res):
+    """
+    Crop image according to the supplied bounding box.
+    res: [rows, cols]
+    """
+    # Upper left point
+    ul = np.array(transform([1, 1], center, scale, res, invert=1)) - 1
+    # Bottom right point
+    br = np.array(transform([res[1] + 1, res[0] + 1], center, scale, res, invert=1)) - 1
+
+    # Padding so that when rotated proper amount of context is included
+    pad = int(np.linalg.norm(br - ul) / 2 - float(br[1] - ul[1]) / 2)
+
+    new_shape = [br[1] - ul[1], br[0] - ul[0]]
+    if len(img.shape) > 2:
+        new_shape += [img.shape[2]]
+    new_img = np.zeros(new_shape, dtype=np.float32)
+
+    # Range to fill new array
+    new_x = max(0, -ul[0]), min(br[0], len(img[0])) - ul[0]
+    new_y = max(0, -ul[1]), min(br[1], len(img)) - ul[1]
+    # Range to sample from original image
+    old_x = max(0, ul[0]), min(len(img[0]), br[0])
+    old_y = max(0, ul[1]), min(len(img), br[1])
+    try:
+        new_img[new_y[0]:new_y[1], new_x[0]:new_x[1]] = img[old_y[0]:old_y[1], old_x[0]:old_x[1]]
+    except Exception as e:
+        print(e)
+
+    new_img = cv2.resize(new_img, (res[1], res[0]))  # (cols, rows)
+
+    return new_img, ul, br
+
 def uncrop(img, center, scale, orig_shape, rot=0, is_rgb=True):
     """'Undo' the image cropping/resizing.
     This function is used when evaluating mask/part segmentation.

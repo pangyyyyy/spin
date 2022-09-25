@@ -63,8 +63,10 @@ class HMR(nn.Module):
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
-        self.avgpool = nn.AvgPool2d(7, stride=1)
-        self.fc1 = nn.Linear(512 * block.expansion + npose + 13, 1024)
+        # self.avgpool = nn.AvgPool2d(7, stride=1)
+        self.avgpool = nn.AvgPool2d((8, 6), stride=1)
+        self.fc1 = nn.Linear(512 * block.expansion + npose + 13 + 3, 1024) # 13
+        # self.fc1 = nn.Linear(512 * block.expansion + npose + 13, 1024) # 13
         self.drop1 = nn.Dropout()
         self.fc2 = nn.Linear(1024, 1024)
         self.drop2 = nn.Dropout()
@@ -110,7 +112,7 @@ class HMR(nn.Module):
         return nn.Sequential(*layers)
 
 
-    def forward(self, x, init_pose=None, init_shape=None, init_cam=None, n_iter=3):
+    def forward(self, x, bbox, init_pose=None, init_shape=None, init_cam=None, n_iter=3):
 
         batch_size = x.shape[0]
 
@@ -130,7 +132,7 @@ class HMR(nn.Module):
         x2 = self.layer2(x1)
         x3 = self.layer3(x2)
         x4 = self.layer4(x3)
-
+        # print(x4.shape)
         xf = self.avgpool(x4)
         xf = xf.view(xf.size(0), -1)
 
@@ -138,7 +140,7 @@ class HMR(nn.Module):
         pred_shape = init_shape
         pred_cam = init_cam
         for i in range(n_iter):
-            xc = torch.cat([xf, pred_pose, pred_shape, pred_cam],1)
+            xc = torch.cat([xf, bbox, pred_pose, pred_shape, pred_cam],1)
             xc = self.fc1(xc)
             xc = self.drop1(xc)
             xc = self.fc2(xc)
@@ -151,6 +153,47 @@ class HMR(nn.Module):
 
         return pred_rotmat, pred_shape, pred_cam
 
+    # def forward(self, x, init_pose=None, init_shape=None, init_cam=None, n_iter=3):
+
+    #     batch_size = x.shape[0]
+
+    #     if init_pose is None:
+    #         init_pose = self.init_pose.expand(batch_size, -1)
+    #     if init_shape is None:
+    #         init_shape = self.init_shape.expand(batch_size, -1)
+    #     if init_cam is None:
+    #         init_cam = self.init_cam.expand(batch_size, -1)
+
+    #     x = self.conv1(x)
+    #     x = self.bn1(x)
+    #     x = self.relu(x)
+    #     x = self.maxpool(x)
+
+    #     x1 = self.layer1(x)
+    #     x2 = self.layer2(x1)
+    #     x3 = self.layer3(x2)
+    #     x4 = self.layer4(x3)
+
+    #     xf = self.avgpool(x4)
+    #     xf = xf.view(xf.size(0), -1)
+
+    #     pred_pose = init_pose
+    #     pred_shape = init_shape
+    #     pred_cam = init_cam
+    #     for i in range(n_iter):
+    #         xc = torch.cat([xf, pred_pose, pred_shape, pred_cam],1)
+    #         xc = self.fc1(xc)
+    #         xc = self.drop1(xc)
+    #         xc = self.fc2(xc)
+    #         xc = self.drop2(xc)
+    #         pred_pose = self.decpose(xc) + pred_pose
+    #         pred_shape = self.decshape(xc) + pred_shape
+    #         pred_cam = self.deccam(xc) + pred_cam
+        
+    #     pred_rotmat = rot6d_to_rotmat(pred_pose).view(batch_size, 24, 3, 3)
+
+    #     return pred_rotmat, pred_shape, pred_cam
+
 def hmr(smpl_mean_params, pretrained=True, **kwargs):
     """ Constructs an HMR model with ResNet50 backbone.
     Args:
@@ -158,7 +201,7 @@ def hmr(smpl_mean_params, pretrained=True, **kwargs):
     """
     model = HMR(Bottleneck, [3, 4, 6, 3],  smpl_mean_params, **kwargs)
     if pretrained:
-        resnet_imagenet = resnet.resnet50(pretrained=True)
+        resnet_imagenet = resnet.resnet50(pretrained=False)
         model.load_state_dict(resnet_imagenet.state_dict(),strict=False)
     return model
 

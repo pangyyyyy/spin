@@ -12,11 +12,11 @@ LSPET_ROOT = ''
 MPII_ROOT = ''
 COCO_ROOT = ''
 MPI_INF_3DHP_ROOT = ''
-PW3D_ROOT = ''
+PW3D_ROOT = '/mnt/lustre/panghuien/research/mmhuman3d/data/datasets/pw3d'
 UPI_S1H_ROOT = ''
 
 # Output folder to save test/train npz files
-DATASET_NPZ_PATH = 'data/dataset_extras'
+DATASET_NPZ_PATH = '/mnt/lustre/panghuien/research/mmhuman3d/data/datasets/spin_data'
 
 # Output folder to store the openpose detections
 # This is requires only in case you want to regenerate 

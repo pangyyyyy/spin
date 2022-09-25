@@ -9,7 +9,7 @@ from os.path import join
 
 import config
 import constants
-from utils.imutils import crop, flip_img, flip_pose, flip_kp, transform, rot_aa
+from utils.imutils import crop, flip_img, flip_pose, flip_kp, transform, rot_aa, crop_cliff
 
 class BaseDataset(Dataset):
     """
@@ -116,10 +116,40 @@ class BaseDataset(Dataset):
         
         return flip, pn, rot, sc
 
+    def process_image(self, orig_img_rgb, center, scale, rot, flip, pn,
+                    crop_height=constants.IMG_H,
+                    crop_width=constants.IMG_W):
+        """
+        Read image, do preprocessing and possibly crop it according to the bounding box.
+        If there are bounding box annotations, use them to crop the image.
+        If no bounding box is specified but openpose detections are available, use them to get the bounding box.
+        """
+
+        img, ul, br = crop_cliff(orig_img_rgb, center, scale, (crop_height, crop_width))
+        # crop_img = img.copy()
+        # print(img.shape)
+        # # flip the image 
+        # if flip:
+        #     img = flip_img(img)
+
+        img = img / 255.
+        mean = np.array(constants.IMG_NORM_MEAN, dtype=np.float32)
+        std = np.array(constants.IMG_NORM_STD, dtype=np.float32)
+        norm_img = (img - mean) / std
+        norm_img = np.transpose(norm_img, (2, 0, 1))
+        # print(img.shape, norm_img.shape)
+        return norm_img
+
+
     def rgb_processing(self, rgb_img, center, scale, rot, flip, pn):
         """Process rgb image and do augmentation."""
         rgb_img = crop(rgb_img, center, scale, 
                       [constants.IMG_RES, constants.IMG_RES], rot=rot)
+        
+        # rgb_img, ul, br = crop_cliff(rgb_img, center, scale, 
+        #               (constants.IMG_H, constants.IMG_W))
+        print(rgb_img.shape)
+
         # flip the image 
         if flip:
             rgb_img = flip_img(rgb_img)
@@ -139,6 +169,14 @@ class BaseDataset(Dataset):
                                   [constants.IMG_RES, constants.IMG_RES], rot=r)
         # convert to normalized coordinates
         kp[:,:-1] = 2.*kp[:,:-1]/constants.IMG_RES - 1.
+
+        # for i in range(nparts):
+        #     kp[i,0:2] = transform(kp[i,0:2]+1, center, scale, 
+        #                           [constants.IMG_H, constants.IMG_W], rot=r)
+        # # convert to normalized coordinates
+        # kp[:,0] = 2.*kp[:,0]/constants.IMG_H - 1.
+        # kp[:,1] = 2.*kp[:,1]/constants.IMG_W - 1.
+
         # flip the x coordinates
         if f:
              kp = flip_kp(kp)
@@ -172,6 +210,11 @@ class BaseDataset(Dataset):
         pose = pose.astype('float32')
         return pose
 
+
+
+    def estimate_focal_length(self, img_h, img_w):
+        return (img_w * img_w + img_h * img_h) ** 0.5  # fov: 55 degree
+        
     def __getitem__(self, index):
         item = {}
         scale = self.scale[index].copy()
@@ -197,10 +240,13 @@ class BaseDataset(Dataset):
             betas = np.zeros(10)
 
         # Process image
-        img = self.rgb_processing(img, center, sc*scale, rot, flip, pn)
+        # img = self.rgb_processing(img, center, sc*scale, rot, flip, pn)
+        img = self.process_image(img, center, sc*scale, rot, flip, pn)
         img = torch.from_numpy(img).float()
+        # print(rot, flip)
         # Store image before normalization to use it in visualization
-        item['img'] = self.normalize_img(img)
+        # item['img'] = self.normalize_img(img)
+        item['img'] = img
         item['pose'] = torch.from_numpy(self.pose_processing(pose, rot, flip)).float()
         item['betas'] = torch.from_numpy(betas).float()
         item['imgname'] = imgname
@@ -226,6 +272,21 @@ class BaseDataset(Dataset):
         item['gender'] = self.gender[index]
         item['sample_index'] = index
         item['dataset_name'] = self.dataset
+
+        img_h, img_w = orig_shape
+        focal_length = float(self.estimate_focal_length(img_h, img_w))
+        item['img_h'] = img_h
+        item['img_w'] = img_w
+        item['focal_length'] = focal_length
+        cx, cy = center.astype(np.float32)
+        s = float(sc * scale)
+
+        bbox_info = np.stack([cx - img_w / 2., cy - img_h / 2., s*200])
+        bbox_info[:2] = bbox_info[:2] / focal_length * 2.8  # [-1, 1]
+        bbox_info[2] = (bbox_info[2] - 0.24 * focal_length) / (
+            0.06 * focal_length)  # [-1, 1]
+
+        item['bbox_info'] = np.float32(bbox_info)
 
         try:
             item['maskname'] = self.maskname[index]

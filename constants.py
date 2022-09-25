@@ -1,6 +1,9 @@
 FOCAL_LENGTH = 5000.
 IMG_RES = 224
 
+IMG_H = 256
+IMG_W = 192
+
 # Mean and standard deviation for normalizing input image
 IMG_NORM_MEAN = [0.485, 0.456, 0.406]
 IMG_NORM_STD = [0.229, 0.224, 0.225]
